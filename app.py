@@ -310,6 +310,20 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     .preset:hover  { border-color: var(--gold); color: var(--gold); }
     .preset.active { border-color: var(--gold); color: var(--gold); background: rgba(255,209,0,.07); }
 
+    @media(max-width:600px) {
+      .date-bar {
+        padding: 12px 16px;
+        gap: 8px;
+      }
+      .date-bar .sep { display: none; }
+      .date-bar label { font-size: 10px; }
+      .date-bar input[type="date"] { flex: 1; font-size: 13px; padding: 8px 10px; }
+      .date-row-1 { display: flex; align-items: center; gap: 8px; width: 100%; }
+      .date-row-2 { display: flex; align-items: center; gap: 8px; width: 100%; }
+      .btn-refresh { flex: 1; text-align: center; }
+      .presets { margin-left: 0; flex: 1; justify-content: flex-end; }
+    }
+
     .status-bar { height: 3px; background: transparent; transition: background .3s; }
     .status-bar.loading { background: var(--gold); animation: pulse 1s infinite; }
     @keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:1} }
@@ -322,7 +336,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       gap: 14px;
       margin-bottom: 24px;
     }
-    @media(max-width:600px) { .kpis { grid-template-columns: 1fr 1fr; } }
+    @media(max-width:600px) {
+      .kpis { grid-template-columns: 1fr 1fr; }
+      .kpis .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; }
+    }
     .kpi {
       background: var(--surf);
       border: 1px solid var(--border);
@@ -414,6 +431,28 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     }
     .btn-copy:hover  { border-color: var(--gold); color: var(--gold); }
     .btn-copy.copied { border-color: var(--green); color: var(--green); }
+
+    @media(max-width:600px) {
+      header { padding: 16px; }
+      .main  { padding: 16px 12px 0; }
+      .card  { padding: 18px 14px; }
+
+      .link-row { flex-direction: column; gap: 10px; }
+      .link-copy-wrap { width: 100%; }
+      .link-url {
+        font-size: 13px;
+        padding: 10px 12px;
+        white-space: nowrap;
+      }
+      .promo-code { font-size: 18px; padding: 10px 16px; }
+      .btn-copy { padding: 10px 18px; font-size: 13px; }
+
+      .chart-wrap { height: 180px; }
+
+      table { font-size: 13px; }
+      thead th, tbody td { padding: 10px 6px; }
+      .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    }
   </style>
 </head>
 <body>
@@ -428,16 +467,20 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </header>
 
 <div class="date-bar">
-  <label>Du</label>
-  <input type="date" id="start" value="{{DEFAULT_START}}">
-  <span class="sep">&rarr;</span>
-  <label>au</label>
-  <input type="date" id="end" value="{{DEFAULT_END}}">
-  <button class="btn-refresh" id="btn-refresh">Actualiser</button>
-  <div class="presets">
-    <button class="preset" data-days="7">7 j</button>
-    <button class="preset active" data-days="30">30 j</button>
-    <button class="preset" data-days="90">90 j</button>
+  <div class="date-row-1">
+    <label>Du</label>
+    <input type="date" id="start" value="{{DEFAULT_START}}">
+    <span class="sep">&rarr;</span>
+    <label>au</label>
+    <input type="date" id="end" value="{{DEFAULT_END}}">
+  </div>
+  <div class="date-row-2">
+    <button class="btn-refresh" id="btn-refresh">Actualiser</button>
+    <div class="presets">
+      <button class="preset" data-days="7">7 j</button>
+      <button class="preset active" data-days="30">30 j</button>
+      <button class="preset" data-days="90">90 j</button>
+    </div>
   </div>
 </div>
 <div class="status-bar" id="status-bar"></div>
@@ -473,17 +516,19 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   <div class="card">
     <div class="card-title">R&eacute;partition par source</div>
+    <div class="table-wrap">
     <table>
       <thead>
         <tr>
           <th>Source</th>
           <th class="num">Sessions</th>
           <th class="num">Achats</th>
-          <th class="num">Taux conv.</th>
+          <th class="num">Conv.</th>
         </tr>
       </thead>
       <tbody id="sources-body"></tbody>
     </table>
+    </div>
   </div>
 </div>
 
