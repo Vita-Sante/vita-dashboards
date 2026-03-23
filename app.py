@@ -394,7 +394,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       font-weight: 700;
       color: var(--gold);
       letter-spacing: 2px;
-      flex: 0;
+      flex: none;
+      width: auto;
+      overflow: visible;
+      white-space: nowrap;
     }
     .btn-copy {
       background: transparent;
