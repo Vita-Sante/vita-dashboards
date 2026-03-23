@@ -188,11 +188,22 @@ def dashboard(slug):
     today = datetime.today()
     s = (today - timedelta(days=29)).strftime("%Y-%m-%d")
     e = today.strftime("%Y-%m-%d")
+    # Build links HTML
+    links = getattr(cfg, "LINKS", [])
+    promo = getattr(cfg, "PROMO_CODE", "")
+    links_html = ""
+    if promo:
+        links_html += f'<div class="link-row"><div class="link-meta"><span class="link-label">Code promo</span><span class="link-desc">Partage ce code avec tes followers pour qu\'ils obtiennent 10% de rabais.</span></div><div class="link-copy-wrap"><code class="link-url promo-code">{promo}</code><button class="btn-copy" onclick="copyLink(this, \'{promo}\')">Copier</button></div></div>'
+    for lk in links:
+        url = lk["url"].replace("'", "%27")
+        links_html += f'<div class="link-row"><div class="link-meta"><span class="link-label">{lk["label"]}</span><span class="link-desc">{lk["description"]}</span></div><div class="link-copy-wrap"><code class="link-url">{lk["url"]}</code><button class="btn-copy" onclick="copyLink(this, \'{url}\')">Copier</button></div></div>'
+
     html = HTML_TEMPLATE.replace("{{SLUG}}", cfg.SLUG)
     html = html.replace("{{DISPLAY_NAME}}", cfg.DISPLAY_NAME)
     html = html.replace("{{UTM_CAMPAIGN}}", cfg.UTM_CAMPAIGN)
     html = html.replace("{{DEFAULT_START}}", s)
     html = html.replace("{{DEFAULT_END}}", e)
+    html = html.replace("{{LINKS_HTML}}", links_html)
     return html
 
 
@@ -348,6 +359,58 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
     footer { text-align: center; color: var(--muted); font-size: 11px; margin-top: 40px; }
     footer strong { color: var(--gold); }
+
+    .link-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .link-row:last-child { border-bottom: none; }
+    .link-meta { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 160px; }
+    .link-label { font-size: 13px; font-weight: 700; color: var(--text); }
+    .link-desc  { font-size: 12px; color: var(--muted); }
+    .link-copy-wrap { display: flex; align-items: center; gap: 10px; flex: 2; min-width: 0; }
+    .link-url {
+      font-family: monospace;
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--surf2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 12px;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: block;
+    }
+    .promo-code {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--gold);
+      letter-spacing: 2px;
+      flex: 0;
+    }
+    .btn-copy {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 14px;
+      color: var(--muted);
+      font-family: var(--font);
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: border-color .2s, color .2s;
+    }
+    .btn-copy:hover  { border-color: var(--gold); color: var(--gold); }
+    .btn-copy.copied { border-color: var(--green); color: var(--green); }
   </style>
 </head>
 <body>
@@ -401,6 +464,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   </div>
 
   <div class="card">
+    <div class="card-title">Mes liens &amp; code promo</div>
+    <div id="links-section">{{LINKS_HTML}}</div>
+  </div>
+
+  <div class="card">
     <div class="card-title">R&eacute;partition par source</div>
     <table>
       <thead>
@@ -424,6 +492,18 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 var SLUG = "{{SLUG}}";
 var API  = "/api/" + SLUG + "/data";
 var chart = null;
+
+function copyLink(btn, url) {
+  navigator.clipboard.writeText(url).then(function() {
+    var orig = btn.textContent;
+    btn.textContent = "Copié !";
+    btn.classList.add("copied");
+    setTimeout(function() {
+      btn.textContent = orig;
+      btn.classList.remove("copied");
+    }, 2000);
+  });
+}
 
 function fmtDate(d) {
   return d.toISOString().slice(0, 10);
