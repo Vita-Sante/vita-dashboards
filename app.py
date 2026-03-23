@@ -310,6 +310,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     .preset:hover  { border-color: var(--gold); color: var(--gold); }
     .preset.active { border-color: var(--gold); color: var(--gold); background: rgba(255,209,0,.07); }
 
+    .date-row-1, .date-row-2 { display: flex; align-items: center; gap: 14px; }
+
     @media(max-width:600px) {
       .date-bar {
         padding: 12px 16px;
