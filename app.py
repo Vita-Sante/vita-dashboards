@@ -10,6 +10,9 @@ Routes:
 """
 
 import importlib
+import time
+
+import requests
 import json
 import os
 from datetime import datetime, timedelta
@@ -140,6 +143,78 @@ def fetch_sources(property_id, utm_campaign, start_date, end_date):
     return rows
 
 
+
+# ---------------------------------------------------------------------------
+# Shopify — token en mémoire (client_credentials, expire 24h)
+# ---------------------------------------------------------------------------
+_shopify_token_cache: dict = {"token": None, "expires_at": 0}
+
+
+def _get_shopify_token():
+    if _shopify_token_cache["token"] and _shopify_token_cache["expires_at"] - time.time() > 300:
+        return _shopify_token_cache["token"]
+    shop    = os.environ.get("SHOPIFY_SHOP_DOMAIN")
+    cid     = os.environ.get("SHOPIFY_CLIENT_ID")
+    csecret = os.environ.get("SHOPIFY_CLIENT_SECRET")
+    if not all([shop, cid, csecret]):
+        return None
+    r = requests.post(
+        f"https://{shop}/admin/oauth/access_token",
+        data={"grant_type": "client_credentials", "client_id": cid, "client_secret": csecret},
+        headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+        timeout=10,
+    )
+    r.raise_for_status()
+    data = r.json()
+    _shopify_token_cache["token"] = data["access_token"]
+    _shopify_token_cache["expires_at"] = int(time.time()) + data.get("expires_in", 86400)
+    return _shopify_token_cache["token"]
+
+
+def fetch_shopify_promo_sales(promo_code, start_date, end_date):
+    """
+    Retourne les commandes avec le code promo mais SANS UTM dans landing_site.
+    Dédup : si landing_site contient utm_ → déjà compté dans GA4 → skip.
+    """
+    token = _get_shopify_token()
+    if not token:
+        return None
+    shop        = os.environ.get("SHOPIFY_SHOP_DOMAIN")
+    headers     = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
+    promo_upper = promo_code.upper()
+    orders_count  = 0
+    total_revenue = 0.0
+
+    url = (
+        f"https://{shop}/admin/api/2024-01/orders.json"
+        f"?status=any"
+        f"&created_at_min={start_date}T00:00:00-05:00"
+        f"&created_at_max={end_date}T23:59:59-05:00"
+        f"&limit=250"
+        f"&fields=id,discount_codes,landing_site,total_price"
+    )
+    while url:
+        r = requests.get(url, headers=headers, timeout=15)
+        r.raise_for_status()
+        for order in r.json().get("orders", []):
+            codes = [d.get("code", "").upper() for d in (order.get("discount_codes") or [])]
+            if promo_upper not in codes:
+                continue
+            if "utm_" in (order.get("landing_site") or "").lower():
+                continue
+            orders_count  += 1
+            total_revenue += float(order.get("total_price") or 0)
+        # Pagination curseur Shopify
+        link = r.headers.get("Link", "")
+        url  = None
+        if 'rel="next"' in link:
+            for part in link.split(","):
+                if 'rel="next"' in part:
+                    url = part.strip().lstrip("<").rstrip(">; ").split(">")[0].lstrip("<")
+                    break
+
+    return {"orders": orders_count, "revenue": round(total_revenue, 2)}
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -165,11 +240,15 @@ def api_data(slug):
         return jsonify({"error": "Format de date invalide (YYYY-MM-DD)"}), 400
 
     try:
-        return jsonify({
+        resp = {
             "kpis":      fetch_kpis(cfg.PROPERTY_ID, cfg.UTM_CAMPAIGN, start, end),
             "timeserie": fetch_timeseries(cfg.PROPERTY_ID, cfg.UTM_CAMPAIGN, start, end),
             "sources":   fetch_sources(cfg.PROPERTY_ID, cfg.UTM_CAMPAIGN, start, end),
-        })
+        }
+        promo = getattr(cfg, "PROMO_CODE", "")
+        if promo:
+            resp["promo_sales"] = fetch_shopify_promo_sales(promo, start, end)
+        return jsonify(resp)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -225,6 +304,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       --border: #2c2c2c;
       --gold:   #ffd100;
       --green:  #4ade80;
+      --blue:   #60a5fa;
       --text:   #efefef;
       --muted:  #777;
       --font:   'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -358,6 +438,25 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       background: var(--gold);
     }
     .kpi.green::after { background: var(--green); }
+    .kpi.blue::after  { background: var(--blue); }
+    .kpi.blue .kpi-val { color: var(--blue); }
+    .kpis-promo {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .promo-label {
+      display: inline-block;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--blue);
+      border: 1px solid var(--blue);
+      border-radius: 4px;
+      padding: 2px 7px;
+      margin-bottom: 6px;
+    }
     .kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin-bottom: 10px; }
     .kpi-val   { font-size: 34px; font-weight: 800; line-height: 1; color: var(--text); }
     .kpi.green .kpi-val { color: var(--green); }
@@ -500,9 +599,24 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div class="kpi-sub">visites totales</div>
     </div>
     <div class="kpi green">
-      <div class="kpi-label">Achats</div>
+      <div class="kpi-label">Achats (lien UTM)</div>
       <div class="kpi-val" id="k-conversions">&mdash;</div>
       <div class="kpi-sub" id="k-convrate">taux : &mdash;</div>
+    </div>
+  </div>
+
+  <div class="kpis-promo" id="promo-section" style="display:none">
+    <div class="kpi blue">
+      <div class="promo-label">Code promo</div>
+      <div class="kpi-label">Commandes (code direct)</div>
+      <div class="kpi-val" id="k-promo-orders">&mdash;</div>
+      <div class="kpi-sub">sans attribution UTM</div>
+    </div>
+    <div class="kpi blue">
+      <div class="promo-label">Code promo</div>
+      <div class="kpi-label">Revenus (code direct)</div>
+      <div class="kpi-val" id="k-promo-revenue">&mdash;</div>
+      <div class="kpi-sub">sans double comptage</div>
     </div>
   </div>
 
@@ -593,7 +707,7 @@ async function loadData() {
     var res  = await fetch(API + '?start=' + encodeURIComponent(start) + '&end=' + encodeURIComponent(end));
     var data = await res.json();
     if (data.error) throw new Error(data.error);
-    renderKPIs(data.kpis);
+    renderKPIs(data.kpis, data.promo_sales);
     renderChart(data.timeserie, start, end);
     renderSources(data.sources);
   } catch (e) {
@@ -603,11 +717,21 @@ async function loadData() {
   }
 }
 
-function renderKPIs(k) {
+function renderKPIs(k, promo) {
   document.getElementById('k-users').textContent       = k.users.toLocaleString('fr-CA');
   document.getElementById('k-sessions').textContent    = k.sessions.toLocaleString('fr-CA');
   document.getElementById('k-conversions').textContent = k.conversions.toLocaleString('fr-CA');
   document.getElementById('k-convrate').textContent    = 'taux : ' + k.conv_rate;
+  var promoSection = document.getElementById('promo-section');
+  if (promo && promo.orders !== undefined) {
+    document.getElementById('k-promo-orders').textContent  = promo.orders.toLocaleString('fr-CA');
+    document.getElementById('k-promo-revenue').textContent = promo.revenue
+      ? '$' + promo.revenue.toLocaleString('fr-CA', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+      : '$0.00';
+    promoSection.style.display = '';
+  } else {
+    promoSection.style.display = 'none';
+  }
 }
 
 function renderChart(ts, start, end) {
